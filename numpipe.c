@@ -25,8 +25,8 @@ static int __init init_numpipe(void);
 static void __exit cleanup_numpipe(void);
 static int device_open(struct inode *, struct file *);
 static int device_release(struct inode *, struct file *);
-static ssize_t device_read(struct file *, char *, size_t, loff_t *);
-static ssize_t device_write(struct file *, const char *, size_t, loff_t *);
+static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t sizeBuffer, loff_t *offsetBuff);
+static ssize_t device_write(struct file *filePtr,const char *uBuffer,size_t sizeBuffer,loff_t *offsetBuff);
 
 static struct file_operations fileOps = {
 	.owner = THIS_MODULE,
@@ -77,9 +77,10 @@ static int device_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t device_read(struct file *filePtr, char *uBuffer, size_t sizeBuffer, loff_t *offsetBuff)
+static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t sizeBuffer, loff_t *offsetBuff)
 {
 	int ret = 0;
+	int tempSize = 0;
 
 	printk(KERN_INFO "%s: Read requested, Buffer is: %s size is: %d\n", DEVICE_NAME, buffer, size);
 
@@ -91,7 +92,10 @@ static ssize_t device_read(struct file *filePtr, char *uBuffer, size_t sizeBuffe
 		 return -EFAULT;
 	}
 
-	return ret;
+	tempSize = size;
+	size = 0;
+
+	return tempSize;
 }
 
 static ssize_t device_write(struct file *filePtr,const char *uBuffer,size_t sizeBuffer,loff_t *offsetBuff)
