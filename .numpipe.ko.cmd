@@ -1,0 +1,1 @@
+cmd_/home/divyesh/Documents/MSCS/CS550/Assignment-3/numpipe/numpipe.ko := ld -r -m elf_x86_64 -z max-page-size=0x200000 -T ./scripts/module-common.lds --build-id  -o /home/divyesh/Documents/MSCS/CS550/Assignment-3/numpipe/numpipe.ko /home/divyesh/Documents/MSCS/CS550/Assignment-3/numpipe/numpipe.o /home/divyesh/Documents/MSCS/CS550/Assignment-3/numpipe/numpipe.mod.o ;  true
