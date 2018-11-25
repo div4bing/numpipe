@@ -2,6 +2,7 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/fs.h>
+#include <linux/uaccess.h>
 
 MODULE_LICENSE("DUAL BSD/GPL");
 #define DRIVER_AUTHOR "Divyeshkumar Maisuria <dmaisur1@binghamton.edu>"
@@ -16,15 +17,19 @@ MODULE_PARM_DESC(buffer_size, "Size of the FIFO for Number Pipe");
 
 static int major_num;						// Major number of the character device
 static int dev_open = 0;				// Counter of the number of times the device is openned and closed
+static char buffer[100];
+static int size;
 
 static int __init init_numpipe(void);
 static void __exit cleanup_numpipe(void);
 static int device_open(struct inode *, struct file *);
 static int device_release(struct inode *, struct file *);
+static ssize_t device_read(struct file *, char *, size_t, loff_t *);
 
 static struct file_operations fileOps = {
 	.open = device_open,
-	.release = device_release
+	.release = device_release,
+	.read = device_read
 };
 
 static int __init init_numpipe(void)
@@ -41,6 +46,7 @@ static int __init init_numpipe(void)
 	}
 
 	printk(KERN_INFO "%s: Assigned Major number is: %d\n", DEVICE_NAME, major_num);
+	printk(KERN_INFO "'mknod /dev/%s c %d 0'.\n", DEVICE_NAME, major_num);
 	return 0;
 }
 
@@ -59,6 +65,9 @@ static int device_open(struct inode *inode, struct file *file)		// Module open f
 	printk( KERN_INFO "%s: Oppend Module\n", DEVICE_NAME);
 	try_module_get(THIS_MODULE);
 
+	sprintf(buffer, "THIS IS THE DATA");
+	size = strlen(buffer);
+
 	return SUCCESS;
 }
 
@@ -66,6 +75,21 @@ static int device_release(struct inode *inode, struct file *file)
 {
 	dev_open--;														// Release module for next user
 	module_put(THIS_MODULE);
+	return 0;
+}
+
+static ssize_t device_read(struct file *filePtr, char *uBuffer, size_t sizeBuffer, loff_t *offsetBuff)
+{
+	int ret = 0;
+	ret = copy_to_user(uBuffer, buffer, size);			// Copy the data to use space
+
+	if (ret != 0)
+	{
+		 printk(KERN_INFO "%s: Failed to send %d characters to the user\n", DEVICE_NAME, ret);
+		 return -EFAULT;
+	}
+
+	size = 0;
 	return 0;
 }
 
