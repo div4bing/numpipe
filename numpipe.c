@@ -4,9 +4,11 @@
 #include <linux/moduleparam.h>
 #include <linux/fs.h>
 #include <linux/uaccess.h>
+#include <linux/slab.h>
+#include <linux/mutex.h>
 
 MODULE_LICENSE("DUAL BSD/GPL");
-#define DRIVER_AUTHOR "Divyeshkumar Maisuria <dmaisur1@binghamton.edu>"
+#define DRIVER_AUTHOR "div4bing"
 #define DRIVER_DESC   "Named Pipe for Exchanging Numbers"
 #define DEVICE_NAME "numpipe"
 #define SUCCESS 0
@@ -16,9 +18,11 @@ static int buffer_size = 0;			// Buffer size for the FIFO
 module_param(buffer_size, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 MODULE_PARM_DESC(buffer_size, "Size of the FIFO for Number Pipe");
 
+static DEFINE_MUTEX(mutVar);
+
 static int major_num;						// Major number of the character device
 static int dev_open = 0;				// Counter of the number of times the device is openned and closed
-static char buffer[10000];
+static char *buffer;							// FIFO to maintain user process numbers
 static int size = 0;
 
 static int __init init_numpipe(void);
@@ -51,6 +55,17 @@ static int __init init_numpipe(void)
 
 	printk(KERN_INFO "%s: Assigned Major number is: %d\n", DEVICE_NAME, major_num);
 	printk(KERN_INFO "'mknod /dev/%s c %d 0'.\n", DEVICE_NAME, major_num);
+
+
+	buffer = kmalloc(sizeof(char) * buffer_size, GFP_KERNEL);						//  Assign enough memory to FIFO
+	if (buffer == NULL)
+	{
+		printk(KERN_ALERT "Failed to allocate memory for FIFO\n");
+		return -ENOMEM;
+	}
+
+	mutex_init(&mutVar);	// Initialize the mutex as unlocked
+
 	return 0;
 }
 
@@ -62,9 +77,6 @@ static void __exit cleanup_numpipe(void)
 
 static int device_open(struct inode *inode, struct file *file)		// Module open function, keeps track of number of times the module is openned
 {
-	if (dev_open)															// Module already in use
-		return -EBUSY;
-
 	dev_open++;
 	printk( KERN_INFO "%s: Oppend Module\n", DEVICE_NAME);
 
@@ -84,7 +96,9 @@ static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t si
 
 	printk(KERN_INFO "%s: Read requested, Buffer is: %s size is: %d\n", DEVICE_NAME, buffer, size);
 
+	mutex_lock_interruptible(&mutVar);
 	ret = copy_to_user(uBuffer, buffer, size);			// Copy the data to use space
+	mutex_unlock(&mutVar);
 
 	if (ret != 0)
 	{
@@ -102,6 +116,7 @@ static ssize_t device_write(struct file *filePtr,const char *uBuffer,size_t size
 {
 	unsigned int ret;
 
+	mutex_lock_interruptible(&mutVar);
 	if(sizeBuffer > sizeof(buffer) - 1)
 		return -EINVAL;
 
@@ -111,6 +126,7 @@ static ssize_t device_write(struct file *filePtr,const char *uBuffer,size_t size
 
 	buffer[sizeBuffer] = '\0';
 	size = strlen(buffer);
+	mutex_unlock(&mutVar);
 	printk(KERN_INFO "Write Performed:of size: %d, written size=%zu & Data: [%s] \n", size, sizeBuffer, buffer);
 
 	return sizeBuffer;

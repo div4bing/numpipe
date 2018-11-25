@@ -853,6 +853,14 @@ deps_/home/divyesh/Documents/MSCS/CS550/Assignment-3/numpipe/numpipe.o := \
     $(wildcard include/config/x86/smap.h) \
   arch/x86/include/asm/extable.h \
   arch/x86/include/asm/uaccess_64.h \
+  include/linux/slab.h \
+    $(wildcard include/config/debug/slab.h) \
+    $(wildcard include/config/failslab.h) \
+    $(wildcard include/config/have/hardened/usercopy/allocator.h) \
+    $(wildcard include/config/slab.h) \
+    $(wildcard include/config/slub.h) \
+  include/linux/kmemleak.h \
+  include/linux/kasan.h \
 
 /home/divyesh/Documents/MSCS/CS550/Assignment-3/numpipe/numpipe.o: $(deps_/home/divyesh/Documents/MSCS/CS550/Assignment-3/numpipe/numpipe.o)
 
