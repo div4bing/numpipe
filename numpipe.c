@@ -1,5 +1,6 @@
 #include <linux/init.h>
 #include <linux/module.h>
+#include <linux/device.h>
 #include <linux/moduleparam.h>
 #include <linux/fs.h>
 #include <linux/uaccess.h>
@@ -17,19 +18,22 @@ MODULE_PARM_DESC(buffer_size, "Size of the FIFO for Number Pipe");
 
 static int major_num;						// Major number of the character device
 static int dev_open = 0;				// Counter of the number of times the device is openned and closed
-static char buffer[100];
-static int size;
+static char buffer[10000];
+static int size = 0;
 
 static int __init init_numpipe(void);
 static void __exit cleanup_numpipe(void);
 static int device_open(struct inode *, struct file *);
 static int device_release(struct inode *, struct file *);
 static ssize_t device_read(struct file *, char *, size_t, loff_t *);
+static ssize_t device_write(struct file *, const char *, size_t, loff_t *);
 
 static struct file_operations fileOps = {
+	.owner = THIS_MODULE,
+	.read = device_read,
+	.write = device_write,
 	.open = device_open,
-	.release = device_release,
-	.read = device_read
+	.release = device_release
 };
 
 static int __init init_numpipe(void)
@@ -63,10 +67,6 @@ static int device_open(struct inode *inode, struct file *file)		// Module open f
 
 	dev_open++;
 	printk( KERN_INFO "%s: Oppend Module\n", DEVICE_NAME);
-	try_module_get(THIS_MODULE);
-
-	sprintf(buffer, "THIS IS THE DATA");
-	size = strlen(buffer);
 
 	return SUCCESS;
 }
@@ -74,13 +74,15 @@ static int device_open(struct inode *inode, struct file *file)		// Module open f
 static int device_release(struct inode *inode, struct file *file)
 {
 	dev_open--;														// Release module for next user
-	module_put(THIS_MODULE);
 	return 0;
 }
 
 static ssize_t device_read(struct file *filePtr, char *uBuffer, size_t sizeBuffer, loff_t *offsetBuff)
 {
 	int ret = 0;
+
+	printk(KERN_INFO "%s: Read requested, Buffer is: %s size is: %d\n", DEVICE_NAME, buffer, size);
+
 	ret = copy_to_user(uBuffer, buffer, size);			// Copy the data to use space
 
 	if (ret != 0)
@@ -89,8 +91,25 @@ static ssize_t device_read(struct file *filePtr, char *uBuffer, size_t sizeBuffe
 		 return -EFAULT;
 	}
 
-	size = 0;
-	return 0;
+	return ret;
+}
+
+static ssize_t device_write(struct file *filePtr,const char *uBuffer,size_t sizeBuffer,loff_t *offsetBuff)
+{
+	unsigned int ret;
+
+	if(sizeBuffer > sizeof(buffer) - 1)
+		return -EINVAL;
+
+	ret = copy_from_user(buffer, uBuffer, sizeBuffer);
+	if(ret)
+	return -EFAULT;
+
+	buffer[sizeBuffer] = '\0';
+	size = strlen(buffer);
+	printk(KERN_INFO "Write Performed:of size: %d, written size=%zu & Data: [%s] \n", size, sizeBuffer, buffer);
+
+	return sizeBuffer;
 }
 
 module_init(init_numpipe);

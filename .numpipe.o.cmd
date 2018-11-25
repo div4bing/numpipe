@@ -556,9 +556,15 @@ deps_/home/divyesh/Documents/MSCS/CS550/Assignment-3/numpipe/numpipe.o := \
   include/linux/rbtree.h \
   arch/x86/include/uapi/asm/vsyscall.h \
   include/asm-generic/fixmap.h \
+  arch/x86/include/asm/hardirq.h \
+    $(wildcard include/config/kvm/intel.h) \
+    $(wildcard include/config/have/kvm.h) \
+    $(wildcard include/config/x86/thermal/vector.h) \
+    $(wildcard include/config/x86/mce/threshold.h) \
+    $(wildcard include/config/x86/mce/amd.h) \
+    $(wildcard include/config/hyperv.h) \
   arch/x86/include/asm/io_apic.h \
   arch/x86/include/asm/irq_vectors.h \
-    $(wildcard include/config/have/kvm.h) \
     $(wildcard include/config/pci/msi.h) \
   include/linux/topology.h \
     $(wildcard include/config/use/percpu/numa/node/id.h) \
@@ -648,6 +654,21 @@ deps_/home/divyesh/Documents/MSCS/CS550/Assignment-3/numpipe/numpipe.o := \
     $(wildcard include/config/modules/use/elf/rel.h) \
     $(wildcard include/config/modules/use/elf/rela.h) \
   arch/x86/include/asm/orc_types.h \
+  include/linux/device.h \
+    $(wildcard include/config/debug/devres.h) \
+    $(wildcard include/config/generic/msi/irq/domain.h) \
+    $(wildcard include/config/pinctrl.h) \
+    $(wildcard include/config/generic/msi/irq.h) \
+    $(wildcard include/config/dma/cma.h) \
+    $(wildcard include/config/of.h) \
+    $(wildcard include/config/devtmpfs.h) \
+    $(wildcard include/config/sysfs/deprecated.h) \
+  include/linux/ioport.h \
+  include/linux/klist.h \
+  include/linux/pinctrl/devinfo.h \
+    $(wildcard include/config/pm.h) \
+  include/linux/pinctrl/consumer.h \
+  include/linux/seq_file.h \
   include/linux/fs.h \
     $(wildcard include/config/fs/posix/acl.h) \
     $(wildcard include/config/security.h) \
@@ -710,7 +731,14 @@ deps_/home/divyesh/Documents/MSCS/CS550/Assignment-3/numpipe/numpipe.o := \
   include/linux/projid.h \
   include/uapi/linux/quota.h \
   include/linux/nfs_fs_i.h \
-  include/linux/uaccess.h \
+  include/linux/cred.h \
+    $(wildcard include/config/debug/credentials.h) \
+    $(wildcard include/config/keys.h) \
+  include/linux/key.h \
+  include/linux/assoc_array.h \
+    $(wildcard include/config/associative/array.h) \
+  include/linux/selinux.h \
+    $(wildcard include/config/security/selinux.h) \
   include/linux/sched.h \
     $(wildcard include/config/virt/cpu/accounting/native.h) \
     $(wildcard include/config/sched/info.h) \
@@ -800,6 +828,24 @@ deps_/home/divyesh/Documents/MSCS/CS550/Assignment-3/numpipe/numpipe.o := \
   include/uapi/asm-generic/siginfo.h \
   include/linux/task_io_accounting.h \
     $(wildcard include/config/task/io/accounting.h) \
+  include/linux/sched/user.h \
+    $(wildcard include/config/fanotify.h) \
+    $(wildcard include/config/posix/mqueue.h) \
+    $(wildcard include/config/bpf/syscall.h) \
+    $(wildcard include/config/net.h) \
+  include/linux/pinctrl/pinctrl-state.h \
+  include/linux/pm.h \
+    $(wildcard include/config/vt/console/sleep.h) \
+    $(wildcard include/config/pm/clk.h) \
+    $(wildcard include/config/pm/generic/domains.h) \
+  include/linux/ratelimit.h \
+  arch/x86/include/asm/device.h \
+    $(wildcard include/config/intel/iommu.h) \
+    $(wildcard include/config/amd/iommu.h) \
+    $(wildcard include/config/x86/dev/dma/ops.h) \
+    $(wildcard include/config/pci/domains.h) \
+  include/linux/pm_wakeup.h \
+  include/linux/uaccess.h \
   include/linux/kasan-checks.h \
   arch/x86/include/asm/uaccess.h \
     $(wildcard include/config/x86/intel/usercopy.h) \
