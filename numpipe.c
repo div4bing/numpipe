@@ -32,6 +32,7 @@ MODULE_PARM_DESC(buffer_size, "Size of the FIFO for Number Pipe");
 
 static int major_num;						// Major number of the character device
 static int dev_open = 0;				// Counter of the number of times the device is openned and closed
+static int readClearFlag = 0;		// Flag controls reading in loop
 
 static int __init init_numpipe(void);
 static void __exit cleanup_numpipe(void);
@@ -186,6 +187,15 @@ static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t si
 
 	down_interruptible(&semVar);
 
+	if (readClearFlag != 0)
+	{
+		readClearFlag = 0;
+		up(&semVar);
+		return 0;
+	}
+
+	readClearFlag++;
+
 	if (dequeueFifo(&data[0]) == 0)		// Proceed only if FIFO is not empty
 	{
 		str_size = strlen(data);
@@ -198,6 +208,7 @@ static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t si
 		if (ret != 0)
 		{
 			 printk(KERN_INFO "%s: Failed to send %d characters to the user\n", DEVICE_NAME, ret);
+			 up(&semVar);
 			 return -EFAULT;
 		}
 	}
@@ -214,15 +225,23 @@ static ssize_t device_write(struct file *filePtr,const char *uBuffer,size_t size
 
 	down_interruptible(&semVar);
 	if(sizeBuffer > (MAX_LEN - 1))
+	{
+		up(&semVar);
 		return -EINVAL;
+	}
 
 	ret = copy_from_user(data, uBuffer, sizeBuffer);
+
 	if(ret)
-	return -EFAULT;
+	{
+		up(&semVar);
+		return -EFAULT;
+	}
 
 	data[sizeBuffer] = '\0';
 	if (enqueueFifo(data) == -1)			// Check if FIFO is not full, and add the new data
   {
+		up(&semVar);
     return -1;
   }
 
