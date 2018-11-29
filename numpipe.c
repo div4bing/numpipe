@@ -5,25 +5,33 @@
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <linux/slab.h>
-#include <linux/mutex.h>
 
 MODULE_LICENSE("DUAL BSD/GPL");
 #define DRIVER_AUTHOR "div4bing"
 #define DRIVER_DESC   "Named Pipe for Exchanging Numbers"
 #define DEVICE_NAME "numpipe"
 #define SUCCESS 0
+#define MAX_LEN 100
+
+static DEFINE_SEMAPHORE(semVar);
+
+struct FifoQueue
+{
+  char **data;
+  int head;
+  int tail;
+  int queueCount;
+};
+
+struct FifoQueue fifo;
 
 static int buffer_size = 0;			// Buffer size for the FIFO
 // Module Parameter information
 module_param(buffer_size, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 MODULE_PARM_DESC(buffer_size, "Size of the FIFO for Number Pipe");
 
-static DEFINE_MUTEX(mutVar);
-
 static int major_num;						// Major number of the character device
 static int dev_open = 0;				// Counter of the number of times the device is openned and closed
-static char *buffer;							// FIFO to maintain user process numbers
-static int size = 0;
 
 static int __init init_numpipe(void);
 static void __exit cleanup_numpipe(void);
@@ -31,6 +39,9 @@ static int device_open(struct inode *, struct file *);
 static int device_release(struct inode *, struct file *);
 static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t sizeBuffer, loff_t *offsetBuff);
 static ssize_t device_write(struct file *filePtr,const char *uBuffer,size_t sizeBuffer,loff_t *offsetBuff);
+int dequeueFifo(char *dequeuData);
+int IsQueueEmpty(void);
+int IsQueueFull(void);
 
 static struct file_operations fileOps = {
 	.owner = THIS_MODULE,
@@ -40,8 +51,71 @@ static struct file_operations fileOps = {
 	.release = device_release
 };
 
+int dequeueFifo(char *dequeueData)
+{
+  if (IsQueueEmpty() == -1)
+  {
+    // printf("Error! Queue is Empty\n");
+    return -1;
+  }
+
+	strcpy(dequeueData, fifo.data[fifo.head]);
+
+  fifo.head++;
+
+  if(fifo.head == buffer_size)
+  {
+    fifo.head = 0;
+  }
+
+  fifo.queueCount--;
+
+  return 0;
+}
+
+int enqueueFifo(char *enqueueData)
+{
+  if(IsQueueFull() == 0)
+  {
+    if(fifo.tail == buffer_size-1)
+    {
+       fifo.tail = -1;    // Reset Tail
+    }
+
+		strcpy(fifo.data[++fifo.tail], enqueueData);
+    fifo.queueCount++;
+    return 0;
+  }
+  else
+  {
+    return -1;
+  }
+}
+
+int IsQueueEmpty(void)
+{
+  if (fifo.queueCount == 0)
+  {
+    return -1;
+  }
+
+  return 0;
+}
+
+int IsQueueFull(void)
+{
+  if (fifo.queueCount == buffer_size)
+  {
+    return -1;
+  }
+
+  return 0;
+}
+
 static int __init init_numpipe(void)
 {
+	int i = 0;
+
 	printk(KERN_INFO "%s: Welcome to Num Pipe! Passed FIFO size is-> %d\n", DEVICE_NAME, buffer_size);
 	printk(KERN_INFO "%s: Registering char device\n", DEVICE_NAME);
 
@@ -56,15 +130,29 @@ static int __init init_numpipe(void)
 	printk(KERN_INFO "%s: Assigned Major number is: %d\n", DEVICE_NAME, major_num);
 	printk(KERN_INFO "'mknod /dev/%s c %d 0'.\n", DEVICE_NAME, major_num);
 
+	fifo.data = kmalloc(sizeof(char *) * buffer_size, GFP_KERNEL);						//  Assign enough FIFO
 
-	buffer = kmalloc(sizeof(char) * buffer_size, GFP_KERNEL);						//  Assign enough memory to FIFO
-	if (buffer == NULL)
+	if (fifo.data == NULL)
 	{
-		printk(KERN_ALERT "Failed to allocate memory for FIFO\n");
+		printk(KERN_ALERT "Failed to allocate enough FIFO\n");
 		return -ENOMEM;
 	}
 
-	mutex_init(&mutVar);	// Initialize the mutex as unlocked
+	for (i = 0; i < buffer_size; i++)																					// Assign enough memory for each FIFO
+	{
+		fifo.data[i] = kmalloc(MAX_LEN, GFP_KERNEL);
+
+		if (fifo.data[i] == NULL)
+		{
+			printk(KERN_ALERT "Failed to allocate enough memory for FIFO\n");
+			return -ENOMEM;
+		}
+	}
+
+	fifo.head = 0;			// Default values
+  fifo.tail = -1;			// Default values
+
+	sema_init(&semVar, 1);		// Have a binary semaphore
 
 	return 0;
 }
@@ -72,6 +160,7 @@ static int __init init_numpipe(void)
 static void __exit cleanup_numpipe(void)
 {
 	printk(KERN_INFO "%s: Unregistering the char device\n", DEVICE_NAME);
+	kfree(fifo.data);
 	unregister_chrdev(major_num, DEVICE_NAME);
 }
 
@@ -92,22 +181,28 @@ static int device_release(struct inode *inode, struct file *file)
 static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t sizeBuffer, loff_t *offsetBuff)
 {
 	int ret = 0;
-	int tempSize = 0;
+	char data[MAX_LEN];
+	int str_size = 0, tempSize = 0;
 
-	printk(KERN_INFO "%s: Read requested, Buffer is: %s size is: %d\n", DEVICE_NAME, buffer, size);
+	down_interruptible(&semVar);
 
-	mutex_lock_interruptible(&mutVar);
-	ret = copy_to_user(uBuffer, buffer, size);			// Copy the data to use space
-	mutex_unlock(&mutVar);
-
-	if (ret != 0)
+	if (dequeueFifo(&data[0]) == 0)		// Proceed only if FIFO is not empty
 	{
-		 printk(KERN_INFO "%s: Failed to send %d characters to the user\n", DEVICE_NAME, ret);
-		 return -EFAULT;
-	}
+		str_size = strlen(data);
+		tempSize = str_size;
 
-	tempSize = size;
-	size = 0;
+		printk(KERN_INFO "%s: Read requested, Buffer is: %s size is: %d\n", DEVICE_NAME, data, str_size);
+
+		ret = copy_to_user(uBuffer, data, str_size);			// Copy the data to use space
+
+		if (ret != 0)
+		{
+			 printk(KERN_INFO "%s: Failed to send %d characters to the user\n", DEVICE_NAME, ret);
+			 return -EFAULT;
+		}
+	}
+	str_size = 0;
+	up(&semVar);
 
 	return tempSize;
 }
@@ -115,19 +210,25 @@ static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t si
 static ssize_t device_write(struct file *filePtr,const char *uBuffer,size_t sizeBuffer,loff_t *offsetBuff)
 {
 	unsigned int ret;
+	char data[MAX_LEN];
 
-	mutex_lock_interruptible(&mutVar);
-	if(sizeBuffer > sizeof(buffer) - 1)
+	down_interruptible(&semVar);
+	if(sizeBuffer > (MAX_LEN - 1))
 		return -EINVAL;
 
-	ret = copy_from_user(buffer, uBuffer, sizeBuffer);
+	ret = copy_from_user(data, uBuffer, sizeBuffer);
 	if(ret)
 	return -EFAULT;
 
-	buffer[sizeBuffer] = '\0';
-	size = strlen(buffer);
-	mutex_unlock(&mutVar);
-	printk(KERN_INFO "Write Performed:of size: %d, written size=%zu & Data: [%s] \n", size, sizeBuffer, buffer);
+	data[sizeBuffer] = '\0';
+	if (enqueueFifo(data) == -1)			// Check if FIFO is not full, and add the new data
+  {
+    return -1;
+  }
+
+	printk(KERN_INFO "Write Performed:of size: %d, written size=%zu & Data: [%s] \n", (int) strlen(data), sizeBuffer, data);
+	data[0] = '\0';		// NULL the data
+	up(&semVar);
 
 	return sizeBuffer;
 }
