@@ -13,7 +13,9 @@ MODULE_LICENSE("DUAL BSD/GPL");
 #define SUCCESS 0
 #define MAX_LEN 100
 
-static DEFINE_SEMAPHORE(semVar);
+static DEFINE_SEMAPHORE(semMutual);
+static DEFINE_SEMAPHORE(semEmpty);
+static DEFINE_SEMAPHORE(semFull);
 
 struct FifoQueue
 {
@@ -32,7 +34,6 @@ MODULE_PARM_DESC(buffer_size, "Size of the FIFO for Number Pipe");
 
 static int major_num;						// Major number of the character device
 static int dev_open = 0;				// Counter of the number of times the device is openned and closed
-static int readClearFlag = 0;		// Flag controls reading in loop
 
 static int __init init_numpipe(void);
 static void __exit cleanup_numpipe(void);
@@ -153,7 +154,9 @@ static int __init init_numpipe(void)
 	fifo.head = 0;			// Default values
   fifo.tail = -1;			// Default values
 
-	sema_init(&semVar, 1);		// Have a binary semaphore
+	sema_init(&semMutual, 1);		// Have a binary semaphore for Mutual Exclusion on shared resource
+  sema_init(&semEmpty, 0);		// Have a binary semaphore for Empty FIFO
+  sema_init(&semFull, buffer_size);		// Have a binary semaphore for Full FIFO
 
 	return 0;
 }
@@ -185,16 +188,13 @@ static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t si
 	char data[MAX_LEN];
 	int str_size = 0, tempSize = 0;
 
-	down_interruptible(&semVar);
+  if (*offsetBuff > sizeBuffer)
+  {
+    return 0;
+  }
 
-	if (readClearFlag != 0)
-	{
-		readClearFlag = 0;
-		up(&semVar);
-		return 0;
-	}
-
-	readClearFlag++;
+	down_interruptible(&semEmpty);
+  down_interruptible(&semMutual);
 
 	if (dequeueFifo(&data[0]) == 0)		// Proceed only if FIFO is not empty
 	{
@@ -208,14 +208,18 @@ static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t si
 		if (ret != 0)
 		{
 			 printk(KERN_INFO "%s: Failed to send %d characters to the user\n", DEVICE_NAME, ret);
-			 up(&semVar);
+       up(&semEmpty);
+			 up(&semMutual);
 			 return -EFAULT;
 		}
 	}
 	str_size = 0;
-	up(&semVar);
+	up(&semMutual);
+  up(&semFull);
 
-	return tempSize;
+  *offsetBuff = sizeBuffer+1;
+
+	return sizeBuffer;
 }
 
 static ssize_t device_write(struct file *filePtr,const char *uBuffer,size_t sizeBuffer,loff_t *offsetBuff)
@@ -223,10 +227,12 @@ static ssize_t device_write(struct file *filePtr,const char *uBuffer,size_t size
 	unsigned int ret;
 	char data[MAX_LEN];
 
-	down_interruptible(&semVar);
+  down_interruptible(&semFull);
+	down_interruptible(&semMutual);
 	if(sizeBuffer > (MAX_LEN - 1))
 	{
-		up(&semVar);
+    up(&semFull);
+		up(&semMutual);
 		return -EINVAL;
 	}
 
@@ -234,20 +240,23 @@ static ssize_t device_write(struct file *filePtr,const char *uBuffer,size_t size
 
 	if(ret)
 	{
-		up(&semVar);
+    up(&semFull);
+		up(&semMutual);
 		return -EFAULT;
 	}
 
 	data[sizeBuffer] = '\0';
 	if (enqueueFifo(data) == -1)			// Check if FIFO is not full, and add the new data
   {
-		up(&semVar);
+    up(&semFull);
+		up(&semMutual);
     return -1;
   }
 
 	printk(KERN_INFO "Write Performed:of size: %d, written size=%zu & Data: [%s] \n", (int) strlen(data), sizeBuffer, data);
 	data[0] = '\0';		// NULL the data
-	up(&semVar);
+	up(&semMutual);
+  up(&semEmpty);
 
 	return sizeBuffer;
 }
