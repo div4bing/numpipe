@@ -188,8 +188,9 @@ static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t si
 	char data[MAX_LEN];
 	int str_size = 0, tempSize = 0;
 
-  if (*offsetBuff > sizeBuffer)
+  if (*offsetBuff > tempSize)
   {
+    *offsetBuff = 0;
     return 0;
   }
 
@@ -217,9 +218,9 @@ static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t si
 	up(&semMutual);
   up(&semFull);
 
-  *offsetBuff = sizeBuffer+1;
+  *offsetBuff = tempSize+1;
 
-	return sizeBuffer;
+	return tempSize;
 }
 
 static ssize_t device_write(struct file *filePtr,const char *uBuffer,size_t sizeBuffer,loff_t *offsetBuff)
