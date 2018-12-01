@@ -194,7 +194,11 @@ static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t si
     return 0;
   }
 
-	down_interruptible(&semEmpty);
+	if (down_interruptible(&semEmpty) < 0)   // To handle Ctl+C from userspace process when FIFO is empty
+  {
+    return 0;
+  }
+
   down_interruptible(&semMutual);
 
 	if (dequeueFifo(&data[0]) == 0)		// Proceed only if FIFO is not empty
@@ -228,7 +232,11 @@ static ssize_t device_write(struct file *filePtr,const char *uBuffer,size_t size
 	unsigned int ret;
 	char data[MAX_LEN];
 
-  down_interruptible(&semFull);
+  if (down_interruptible(&semFull) < 0)     // To hande Ctl+C on userspace process when FIFO is full
+  {
+    return 0;
+  }
+
 	down_interruptible(&semMutual);
 	if(sizeBuffer > (MAX_LEN - 1))
 	{
