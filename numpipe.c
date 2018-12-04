@@ -41,7 +41,6 @@ static int device_open(struct inode *, struct file *);
 static int device_release(struct inode *, struct file *);
 static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t sizeBuffer, loff_t *offsetBuff);
 static ssize_t device_write(struct file *filePtr,const char *uBuffer,size_t sizeBuffer,loff_t *offsetBuff);
-int dequeueFifo(char *dequeuData);
 int IsQueueEmpty(void);
 int IsQueueFull(void);
 
