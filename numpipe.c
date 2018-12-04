@@ -53,46 +53,46 @@ static struct file_operations fileOps = {
 	.release = device_release
 };
 
-int dequeueFifo(char *dequeueData)
-{
-  if (IsQueueEmpty() == -1)
-  {
-    // printf("Error! Queue is Empty\n");
-    return -1;
-  }
+// int dequeueFifo(char *dequeueData)
+// {
+//   if (IsQueueEmpty() == -1)
+//   {
+//     // printf("Error! Queue is Empty\n");
+//     return -1;
+//   }
+//
+// 	strcpy(dequeueData, fifo.data[fifo.head]);
+//
+//   fifo.head++;
+//
+//   if(fifo.head == buffer_size)
+//   {
+//     fifo.head = 0;
+//   }
+//
+//   fifo.queueCount--;
+//
+//   return 0;
+// }
 
-	strcpy(dequeueData, fifo.data[fifo.head]);
-
-  fifo.head++;
-
-  if(fifo.head == buffer_size)
-  {
-    fifo.head = 0;
-  }
-
-  fifo.queueCount--;
-
-  return 0;
-}
-
-int enqueueFifo(char *enqueueData)
-{
-  if(IsQueueFull() == 0)
-  {
-    if(fifo.tail == buffer_size-1)
-    {
-       fifo.tail = -1;    // Reset Tail
-    }
-
-		strcpy(fifo.data[++fifo.tail], enqueueData);
-    fifo.queueCount++;
-    return 0;
-  }
-  else
-  {
-    return -1;
-  }
-}
+// int enqueueFifo(char *enqueueData)
+// {
+//   if(IsQueueFull() == 0)
+//   {
+//     if(fifo.tail == buffer_size-1)
+//     {
+//        fifo.tail = -1;    // Reset Tail
+//     }
+//
+// 		strcpy(fifo.data[++fifo.tail], enqueueData);
+//     fifo.queueCount++;
+//     return 0;
+//   }
+//   else
+//   {
+//     return -1;
+//   }
+// }
 
 int IsQueueEmpty(void)
 {
@@ -163,8 +163,12 @@ static int __init init_numpipe(void)
 
 static void __exit cleanup_numpipe(void)
 {
+  int i = 0;
 	printk(KERN_INFO "%s: Unregistering the char device\n", DEVICE_NAME);
-	kfree(fifo.data);
+  for (i=0; i < buffer_size; i++)
+  {
+	   kfree(fifo.data);
+  }
 	unregister_chrdev(major_num, DEVICE_NAME);
 }
 
@@ -185,14 +189,6 @@ static int device_release(struct inode *inode, struct file *file)
 static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t sizeBuffer, loff_t *offsetBuff)
 {
 	int ret = 0;
-	char data[MAX_LEN];
-	int str_size = 0, tempSize = 0;
-
-  if (*offsetBuff > tempSize)
-  {
-    *offsetBuff = 0;
-    return 0;
-  }
 
 	if (down_interruptible(&semEmpty) < 0)   // To handle Ctl+C from userspace process when FIFO is empty
   {
@@ -201,36 +197,43 @@ static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t si
 
   down_interruptible(&semMutual);
 
-	if (dequeueFifo(&data[0]) == 0)		// Proceed only if FIFO is not empty
-	{
-		str_size = strlen(data);
-		tempSize = str_size;
+	// if (dequeueFifo(&data[0]) == 0)		// Proceed only if FIFO is not empty
 
-		printk(KERN_INFO "%s: Read requested, Buffer is: %s size is: %d\n", DEVICE_NAME, data, str_size);
+  if (IsQueueEmpty() == -1)
+  {
+    printk(KERN_INFO "Queue is Empty\n");
+  }
 
-		ret = copy_to_user(uBuffer, data, str_size);			// Copy the data to use space
+  printk(KERN_INFO "READ: Request Size=%d\n", (int)sizeBuffer);
 
-		if (ret != 0)
-		{
-			 printk(KERN_INFO "%s: Failed to send %d characters to the user\n", DEVICE_NAME, ret);
-       up(&semEmpty);
-			 up(&semMutual);
-			 return -EFAULT;
-		}
-	}
-	str_size = 0;
+  ret = copy_to_user(uBuffer, fifo.data[fifo.head], sizeBuffer);			// Copy the data to use space
+
+  if (ret != 0)
+  {
+     printk(KERN_INFO "%s: Failed to send %d characters to the user\n", DEVICE_NAME, ret);
+     up(&semEmpty);
+     up(&semMutual);
+     return -EFAULT;
+  }
+
+  fifo.head++;
+
+  if(fifo.head == buffer_size)
+  {
+    fifo.head = 0;
+  }
+
+  fifo.queueCount--;
+
 	up(&semMutual);
   up(&semFull);
 
-  *offsetBuff = tempSize+1;
-
-	return tempSize;
+	return sizeBuffer;
 }
 
 static ssize_t device_write(struct file *filePtr,const char *uBuffer,size_t sizeBuffer,loff_t *offsetBuff)
 {
 	unsigned int ret;
-	char data[MAX_LEN];
 
   if (down_interruptible(&semFull) < 0)     // To hande Ctl+C on userspace process when FIFO is full
   {
@@ -245,25 +248,31 @@ static ssize_t device_write(struct file *filePtr,const char *uBuffer,size_t size
 		return -EINVAL;
 	}
 
-	ret = copy_from_user(data, uBuffer, sizeBuffer);
+  if(IsQueueFull() == 0)
+  {
+    if(fifo.tail == buffer_size-1)
+    {
+       fifo.tail = -1;    // Reset Tail
+    }
 
-	if(ret)
-	{
-    up(&semFull);
-		up(&semMutual);
-		return -EFAULT;
-	}
+    ret = copy_from_user(fifo.data[++fifo.tail], uBuffer, sizeBuffer);
 
-	data[sizeBuffer] = '\0';
-	if (enqueueFifo(data) == -1)			// Check if FIFO is not full, and add the new data
+  	if(ret)
+  	{
+      up(&semFull);
+  		up(&semMutual);
+  		return -EFAULT;
+  	}
+
+    fifo.queueCount++;
+  }
+  else
   {
     up(&semFull);
 		up(&semMutual);
     return -1;
   }
 
-	printk(KERN_INFO "Write Performed:of size: %d, written size=%zu & Data: [%s] \n", (int) strlen(data), sizeBuffer, data);
-	data[0] = '\0';		// NULL the data
 	up(&semMutual);
   up(&semEmpty);
 
