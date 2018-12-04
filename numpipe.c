@@ -25,7 +25,7 @@ struct FifoQueue
   int queueCount;
 };
 
-struct FifoQueue fifo;
+struct FifoQueue fifo;      // Instance of Queue
 
 static int buffer_size = 0;			// Buffer size for the FIFO
 // Module Parameter information
@@ -53,47 +53,6 @@ static struct file_operations fileOps = {
 	.release = device_release
 };
 
-// int dequeueFifo(char *dequeueData)
-// {
-//   if (IsQueueEmpty() == -1)
-//   {
-//     // printf("Error! Queue is Empty\n");
-//     return -1;
-//   }
-//
-// 	strcpy(dequeueData, fifo.data[fifo.head]);
-//
-//   fifo.head++;
-//
-//   if(fifo.head == buffer_size)
-//   {
-//     fifo.head = 0;
-//   }
-//
-//   fifo.queueCount--;
-//
-//   return 0;
-// }
-
-// int enqueueFifo(char *enqueueData)
-// {
-//   if(IsQueueFull() == 0)
-//   {
-//     if(fifo.tail == buffer_size-1)
-//     {
-//        fifo.tail = -1;    // Reset Tail
-//     }
-//
-// 		strcpy(fifo.data[++fifo.tail], enqueueData);
-//     fifo.queueCount++;
-//     return 0;
-//   }
-//   else
-//   {
-//     return -1;
-//   }
-// }
-
 int IsQueueEmpty(void)
 {
   if (fifo.queueCount == 0)
@@ -101,7 +60,7 @@ int IsQueueEmpty(void)
     return -1;
   }
 
-  return 0;
+  return SUCCESS;
 }
 
 int IsQueueFull(void)
@@ -111,7 +70,7 @@ int IsQueueFull(void)
     return -1;
   }
 
-  return 0;
+  return SUCCESS;
 }
 
 static int __init init_numpipe(void)
@@ -130,13 +89,13 @@ static int __init init_numpipe(void)
 	}
 
 	printk(KERN_INFO "%s: Assigned Major number is: %d\n", DEVICE_NAME, major_num);
-	printk(KERN_INFO "'mknod /dev/%s c %d 0'.\n", DEVICE_NAME, major_num);
+	printk(KERN_INFO "%s: 'mknod /dev/%s c %d 0'.\n", DEVICE_NAME, DEVICE_NAME, major_num);
 
 	fifo.data = kmalloc(sizeof(char *) * buffer_size, GFP_KERNEL);						//  Assign enough FIFO
 
 	if (fifo.data == NULL)
 	{
-		printk(KERN_ALERT "Failed to allocate enough FIFO\n");
+		printk(KERN_ALERT "%s: Failed to allocate enough FIFO\n", DEVICE_NAME);
 		return -ENOMEM;
 	}
 
@@ -146,7 +105,7 @@ static int __init init_numpipe(void)
 
 		if (fifo.data[i] == NULL)
 		{
-			printk(KERN_ALERT "Failed to allocate enough memory for FIFO\n");
+			printk(KERN_ALERT "%s: Failed to allocate enough memory for FIFO\n", DEVICE_NAME);
 			return -ENOMEM;
 		}
 	}
@@ -158,32 +117,31 @@ static int __init init_numpipe(void)
   sema_init(&semEmpty, 0);		// Have a binary semaphore for Empty FIFO
   sema_init(&semFull, buffer_size);		// Have a binary semaphore for Full FIFO
 
-	return 0;
+	return SUCCESS;
 }
 
 static void __exit cleanup_numpipe(void)
 {
   int i = 0;
 	printk(KERN_INFO "%s: Unregistering the char device\n", DEVICE_NAME);
-  for (i=0; i < buffer_size; i++)
+  for (i=0; i < buffer_size; i++)           // Free-up the allocated memory
   {
-	   kfree(fifo.data);
+	   kfree(fifo.data[i]);
   }
-	unregister_chrdev(major_num, DEVICE_NAME);
+	unregister_chrdev(major_num, DEVICE_NAME);   // Unregister the character device
 }
 
 static int device_open(struct inode *inode, struct file *file)		// Module open function, keeps track of number of times the module is openned
 {
 	dev_open++;
 	printk( KERN_INFO "%s: Oppend Module\n", DEVICE_NAME);
-
 	return SUCCESS;
 }
 
 static int device_release(struct inode *inode, struct file *file)
 {
 	dev_open--;														// Release module for next user
-	return 0;
+	return SUCCESS;
 }
 
 static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t sizeBuffer, loff_t *offsetBuff)
@@ -192,23 +150,21 @@ static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t si
 
 	if (down_interruptible(&semEmpty) < 0)   // To handle Ctl+C from userspace process when FIFO is empty
   {
-    return 0;
+    return SUCCESS;
   }
 
-  down_interruptible(&semMutual);
+  down_interruptible(&semMutual);          // Down on mutual Exclusion semaphore
 
-	// if (dequeueFifo(&data[0]) == 0)		// Proceed only if FIFO is not empty
-
-  if (IsQueueEmpty() == -1)
+  if (IsQueueEmpty() == -1)                // Is the queue empty
   {
-    printk(KERN_INFO "Queue is Empty\n");
+    printk(KERN_INFO "%s: Queue is Empty\n", DEVICE_NAME);
   }
 
-  printk(KERN_INFO "READ: Request Size=%d\n", (int)sizeBuffer);
+  printk(KERN_INFO "%s: Device Read Request of Size=%d\n", DEVICE_NAME, (int)sizeBuffer);
 
   ret = copy_to_user(uBuffer, fifo.data[fifo.head], sizeBuffer);			// Copy the data to use space
 
-  if (ret != 0)
+  if (ret != 0)                           // Failed to copy the data
   {
      printk(KERN_INFO "%s: Failed to send %d characters to the user\n", DEVICE_NAME, ret);
      up(&semEmpty);
@@ -216,6 +172,7 @@ static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t si
      return -EFAULT;
   }
 
+  // Handle our queue
   fifo.head++;
 
   if(fifo.head == buffer_size)
@@ -225,8 +182,8 @@ static ssize_t device_read(struct file *filePtr, char __user *uBuffer, size_t si
 
   fifo.queueCount--;
 
-	up(&semMutual);
-  up(&semFull);
+	up(&semMutual);              // Release mutual Exclusion semaphore
+  up(&semFull);                // UP full semaphore
 
 	return sizeBuffer;
 }
@@ -237,27 +194,28 @@ static ssize_t device_write(struct file *filePtr,const char *uBuffer,size_t size
 
   if (down_interruptible(&semFull) < 0)     // To hande Ctl+C on userspace process when FIFO is full
   {
-    return 0;
+    return SUCCESS;
   }
 
-	down_interruptible(&semMutual);
-	if(sizeBuffer > (MAX_LEN - 1))
+	down_interruptible(&semMutual);           // Acquire lock to the mutual Exclusion semaphore
+
+	if(sizeBuffer > (MAX_LEN - 1))            // Requested size is more than what one can hold
 	{
     up(&semFull);
 		up(&semMutual);
 		return -EINVAL;
 	}
 
-  if(IsQueueFull() == 0)
+  if(IsQueueFull() == SUCCESS)              // Check if FIFO is full
   {
-    if(fifo.tail == buffer_size-1)
+    if(fifo.tail == buffer_size-1)          // Handle out Queue
     {
        fifo.tail = -1;    // Reset Tail
     }
 
-    ret = copy_from_user(fifo.data[++fifo.tail], uBuffer, sizeBuffer);
+    ret = copy_from_user(fifo.data[++fifo.tail], uBuffer, sizeBuffer);      // Copy data passed from user
 
-  	if(ret)
+  	if(ret)                                                                 // Check for failure that some bytes could not be copied
   	{
       up(&semFull);
   		up(&semMutual);
@@ -266,21 +224,21 @@ static ssize_t device_write(struct file *filePtr,const char *uBuffer,size_t size
 
     fifo.queueCount++;
   }
-  else
+  else                                    // FIFO is full
   {
     up(&semFull);
 		up(&semMutual);
     return -1;
   }
 
-	up(&semMutual);
-  up(&semEmpty);
+	up(&semMutual);                         // Release lock
+  up(&semEmpty);                          // Up Empty semaphore
 
-	return sizeBuffer;
+	return sizeBuffer;                      // Return size copied to userspace
 }
 
 module_init(init_numpipe);
 module_exit(cleanup_numpipe);
 
-MODULE_AUTHOR(DRIVER_AUTHOR);	/* Who wrote this module? */
-MODULE_DESCRIPTION(DRIVER_DESC);	/* What does this module do */
+MODULE_AUTHOR(DRIVER_AUTHOR);
+MODULE_DESCRIPTION(DRIVER_DESC);
